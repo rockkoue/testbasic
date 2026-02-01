@@ -1,51 +1,44 @@
-name: Deploy Static Site to S3
+name: Deploy Pipeline For Terraform
 
 on:
-  push:
-    branches:
-      - main
-
+  pull_request:
+    types: [closed]
+  paths: 
+    - 'terraform/**'
+  
 jobs:
-  deploy:
-    name: Deploy to S3 (manual approval)
+  terraform:
+    name: Deploy
     runs-on: ubuntu-latest
 
-    # 🔐 Approvisionnement manuel pour production
-    environment: production
-
     steps:
-      # 1️⃣ Checkout du code
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v2
 
-      # 2️⃣ Configurer les credentials AWS
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+    - name: Set up Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: 1.9.0
 
-      # 3️⃣ Vérifier l'identité AWS (debug / sécurité)
-      - name: Check AWS identity
-        id: aws_identity
-        run: |
-          echo "Caller identity:"
-          aws sts get-caller-identity
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: "eu-west-1"
 
-      # 4️⃣ Vérifier que le bucket existe
-      - name: Verify S3 bucket exists
-        run: |
-          if aws s3 ls "s3://${{ secrets.S3_BUCKET_NAME }}" 2>&1 | grep -q 'NoSuchBucket'; then
-            echo "ERROR: Bucket ${{ secrets.S3_BUCKET_NAME }} does not exist in this account/region."
-            exit 1
-          else
-            echo "✅ Bucket exists."
-          fi
+    - name: Initialize Terraform
+      run: | 
+        cd terraform
+        terraform init
 
-      # 5️⃣ Déploiement
-      - name: Deploy static site to S3
-        run: |
-          echo "Deploying site to S3 bucket ${{ secrets.S3_BUCKET_NAME }}..."
-          aws s3 sync ./site s3://${{ secrets.S3_BUCKET_NAME }} --delete
-          echo "✅ Deployment complete!"
+    - name: Terraform Plan
+      id: plan
+      run: |
+        cd terraform
+        terraform plan -out=tfplan
+    - name: Terraform Apply
+      if: github.event.pull_request.merged == true
+      run: |
+        cd terraform
+        terraform apply -auto-approve
