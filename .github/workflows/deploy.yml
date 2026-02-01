@@ -10,7 +10,7 @@ jobs:
     name: Deploy to S3 (manual approval)
     runs-on: ubuntu-latest
 
-    # 🔐 APPROBATION MANUELLE via Environment
+    # 🔐 Approvisionnement manuel pour production
     environment: production
 
     steps:
@@ -18,7 +18,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2️⃣ Configuration des credentials AWS
+      # 2️⃣ Configurer les credentials AWS
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -26,16 +26,26 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      # 3️⃣ Debug (optionnel, utile pour vérifier bucket / compte)
-      - name: AWS identity (debug)
-        run: aws sts get-caller-identity
-
-      - name: Debug S3 access (optionnel)
+      # 3️⃣ Vérifier l'identité AWS (debug / sécurité)
+      - name: Check AWS identity
+        id: aws_identity
         run: |
-          aws s3 ls
-          aws s3 ls s3://${{ secrets.S3_BUCKET_NAME }}
+          echo "Caller identity:"
+          aws sts get-caller-identity
 
-      # 4️⃣ Déploiement
-      - name: Deploy to S3
+      # 4️⃣ Vérifier que le bucket existe
+      - name: Verify S3 bucket exists
         run: |
+          if aws s3 ls "s3://${{ secrets.S3_BUCKET_NAME }}" 2>&1 | grep -q 'NoSuchBucket'; then
+            echo "ERROR: Bucket ${{ secrets.S3_BUCKET_NAME }} does not exist in this account/region."
+            exit 1
+          else
+            echo "✅ Bucket exists."
+          fi
+
+      # 5️⃣ Déploiement
+      - name: Deploy static site to S3
+        run: |
+          echo "Deploying site to S3 bucket ${{ secrets.S3_BUCKET_NAME }}..."
           aws s3 sync ./site s3://${{ secrets.S3_BUCKET_NAME }} --delete
+          echo "✅ Deployment complete!"
